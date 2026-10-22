@@ -1,0 +1,12 @@
+{
+  "failures": 0,
+  "status": {
+    "buyable": false,
+    "buy_button": "missing",
+    "button_text": null,
+    "availability": "OutOfStock",
+    "delivery": "Derzeit nicht verfügbar",
+    "price": "39.9"
+  },
+  "heartbeat": "2026-10-22T10:49:49+00:00"
+}
