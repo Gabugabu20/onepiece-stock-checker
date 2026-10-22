@@ -9,10 +9,12 @@ Environment variables:
   PRODUCT_URL      Page to check (optional, defaults to the playmat below)
   STATE_FILE       Where the last known status is stored (default: state.json)
   HTML_FILE        Read HTML from a local file instead of the web (for testing)
+  NEXT_CHECK_FILE  Holds the time of the next real check (default: next_check.txt)
 """
 
 import json
 import os
+import random
 import re
 import sys
 import urllib.error
@@ -28,12 +30,17 @@ URL = os.environ.get(
 WEBHOOK = os.environ.get("DISCORD_WEBHOOK", "").strip()
 STATE_FILE = Path(os.environ.get("STATE_FILE", "state.json"))
 HTML_FILE = os.environ.get("HTML_FILE")
+NEXT_CHECK_FILE = Path(os.environ.get("NEXT_CHECK_FILE", "next_check.txt"))
 
 # Honest user agent. You can add a contact address here if you like.
 USER_AGENT = "personal-stock-checker/1.0 (checks one product page every 10 min)"
 
 FAILURES_BEFORE_ALERT = 3      # alert after this many failed fetches in a row
 HEARTBEAT_DAYS = 30            # touch state.json at least this often (keeps GitHub cron alive)
+# The workflow wakes up every 5 minutes, but only really checks the page after a
+# random pause in this range, so the requests don't come at a fixed rhythm.
+MIN_INTERVAL_MIN = 10
+MAX_INTERVAL_MIN = 25
 
 AVAILABILITY_RE = re.compile(
     r"schema\.org/(InStock|OutOfStock|PreOrder|PreSale|SoldOut|BackOrder|"
@@ -216,11 +223,39 @@ def describe(status):
     return "\n".join(lines)
 
 
+def due_for_check(now):
+    """False while the randomly chosen next check time is still in the future."""
+    if os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
+        return True        # started by hand: always check
+    try:
+        next_check = datetime.fromisoformat(NEXT_CHECK_FILE.read_text().strip())
+    except (OSError, ValueError):
+        return True
+    if now < next_check:
+        print(f"Next check at {next_check.isoformat(timespec='seconds')}, skipping")
+        return False
+    return True
+
+
+def schedule_next_check(now):
+    pause = random.uniform(MIN_INTERVAL_MIN * 60, MAX_INTERVAL_MIN * 60)
+    next_check = datetime.fromtimestamp(now.timestamp() + pause, timezone.utc)
+    NEXT_CHECK_FILE.write_text(next_check.isoformat(timespec="seconds") + "\n")
+    print(f"Next check in {pause / 60:.1f} min at {next_check.isoformat(timespec='seconds')}")
+    # Tell the workflow to save the new time to the Actions cache
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write("checked=true\n")
+
+
 def main():
     # Emojis in the log would crash on a Windows console (cp1252) when testing locally
     sys.stdout.reconfigure(encoding="utf-8")
-    state = load_state()
     now = datetime.now(timezone.utc)
+    if not due_for_check(now):
+        return 0
+    schedule_next_check(now)
+    state = load_state()
 
     try:
         html = fetch(URL)

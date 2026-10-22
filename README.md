@@ -32,7 +32,7 @@ Checks the product page every 10 minutes with GitHub Actions and sends a Discord
 
 ## Notes
 
-- GitHub sometimes starts scheduled runs a few minutes late. Expect 10 to 20 minutes between checks.
+- The workflow wakes up every 5 minutes, but the page is only checked after a random pause of 10 to 25 minutes (set by `MIN_INTERVAL_MIN` / `MAX_INTERVAL_MIN` in `check.py`). GitHub often starts scheduled runs late, so real gaps can be a bit longer. Starting the workflow by hand always checks right away.
 - GitHub pauses scheduled workflows in repos with no activity for 60 days. The script writes a small timestamp to `state.json` once a month to avoid this.
 - To check another product, add `PRODUCT_URL: https://...` under `env:` in the workflow.
 - Test locally without the web: `HTML_FILE=page.html python3 check.py`
